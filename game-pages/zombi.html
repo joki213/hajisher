@@ -1,0 +1,200 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>JOKER XD ZOMBI</title><style>*{box-sizing:border-box;user-select:none;-webkit-tap-highlight-color:transparent}body{margin:0;padding:8px;background:#0a0e14;color:#eef;font-family:system-ui,Arial,sans-serif}.card{max-width:420px;margin:auto;padding:10px;border:2px solid #ef4444;border-radius:16px;background:linear-gradient(165deg,#1a0a0a,#0a0e14);box-shadow:0 10px 28px #000a}.brand{text-align:center;font-size:9px;letter-spacing:2px;color:#fca5a5;font-weight:900}.title{text-align:center;font-size:20px;font-weight:900;margin:2px 0 6px;color:#fecaca}.stats{display:flex;gap:5px;margin-bottom:6px}.stat{flex:1;text-align:center;padding:5px 2px;border-radius:8px;background:#2a1212;border:1px solid #7f1d1d}.stat small{display:block;font-size:7px;color:#fca5a5;letter-spacing:1px}.stat b{font-size:14px}canvas{display:block;width:100%;max-width:360px;margin:auto;border:2px solid #7f1d1d;border-radius:10px;touch-action:none;background:#111}.btn{border:0;border-radius:10px;padding:10px 6px;font-weight:900;font-size:14px;color:#1a0505;background:linear-gradient(#fca5a5,#ef4444);box-shadow:0 3px #7f1d1d;cursor:pointer;touch-action:manipulation}.btn:active{transform:translateY(2px);box-shadow:0 1px #7f1d1d}.btn:disabled{opacity:.55}.row{display:flex;gap:6px;margin-top:7px}.row .btn{flex:1}.msg{min-height:18px;text-align:center;margin-top:6px;font-weight:800;color:#fde68a;font-size:12px}.hpbar{height:8px;background:#333;border-radius:4px;margin:4px 0 2px;overflow:hidden}.hpfill{height:100%;background:linear-gradient(90deg,#22c55e,#ef4444);width:100%;transition:width .15s}</style></head><body><div class="card"><div class="brand">JOKER XD ARCADE</div><div class="title">🧟 ZOMBI SURVIVAL</div><div class="stats"><div class="stat"><small>LEVEL</small><b id="lv">1</b></div><div class="stat"><small>KILLS</small><b id="kl">0</b></div><div class="stat"><small>HP</small><b id="hp">100</b></div><div class="stat"><small>WEAPON</small><b id="wp">GUN</b></div></div><div class="hpbar"><div class="hpfill" id="hpf"></div></div><canvas id="c" width="340" height="220"></canvas><div class="row"><button class="btn" id="go">START</button><button class="btn" id="fire" disabled>🔥 FIRE</button></div><div class="msg" id="msg">Survive 20 levels. Kill the Zombie King!</div></div>
+<script>
+const $=i=>document.getElementById(i);
+const c=$('c'),x=c.getContext('2d');
+const W=340,H=220,G=H-28;
+let run=0,level=1,kills=0,hp=100,maxHp=100,weapon=0,score=0;
+let player={x:40,y:G-18},zombies=[],bullets=[],particles=[],frame=0,spawnT=0,kingAlive=0,shake=0;
+const WEAPONS=['GUN','MGUN','TANK'];
+const WCFG=[
+  {rate:18,dmg:1,spread:0,speed:9,color:'#fde68a'},
+  {rate:6,dmg:1,spread:0.08,speed:11,color:'#fbbf24'},
+  {rate:10,dmg:3,spread:0.04,speed:13,color:'#fb923c'}
+];
+
+function beep(f,d,t,v){try{if(window.__jkTone)window.__jkTone(f,d,t||'square',v||0.07)}catch(e){}}
+function snd(n){try{if(window.jkSnd&&window.jkSnd[n])window.jkSnd[n]()}catch(e){}}
+
+function setUI(){
+  $('lv').textContent=level;
+  $('kl').textContent=kills;
+  $('hp').textContent=Math.max(0,Math.floor(hp));
+  $('wp').textContent=WEAPONS[weapon];
+  $('hpf').style.width=Math.max(0,hp/maxHp*100)+'%';
+}
+function M(t){$('msg').textContent=t}
+
+function spawnZ(isKing){
+  const base=1.1+level*0.12;
+  const z={
+    x:W+20+Math.random()*40,
+    y:G-16-Math.random()*8,
+    hp:isKing?(8+Math.floor(level/2)):1,
+    maxHp:isKing?(8+Math.floor(level/2)):1,
+    speed:isKing?(0.55+level*0.03):(base+Math.random()*0.4),
+    king:!!isKing,
+    wob:Math.random()*6.28,
+    size:isKing?22:14
+  };
+  zombies.push(z);
+  if(isKing)kingAlive=1;
+}
+
+function fire(){
+  if(!run)return;
+  const cfg=WCFG[weapon];
+  const b={
+    x:player.x+16,y:player.y+4,
+    vx:cfg.speed,
+    vy:(Math.random()-0.5)*cfg.spread*cfg.speed,
+    dmg:cfg.dmg,life:40,color:cfg.color
+  };
+  bullets.push(b);
+  beep(weapon===2?180:320,0.04,weapon===2?'sawtooth':'square',0.06);
+  if(window.jkSnd&&window.jkSnd.tick)window.jkSnd.tick();
+}
+
+function hitFx(px,py,col){
+  for(let i=0;i<6;i++)particles.push({x:px,y:py,vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*3-1,life:12+Math.random()*8,c:col||'#ef4444'});
+}
+
+function nextLevel(){
+  level++;
+  if(level>20){
+    run=0;M('🏆 YOU SURVIVED ALL 20 LEVELS!');$('go').textContent='PLAY AGAIN';$('fire').disabled=true;
+    if(window.jkSnd&&window.jkSnd.win)window.jkSnd.win();
+    return;
+  }
+  weapon=level<=6?0:level<=13?1:2;
+  spawnT=0;kingAlive=0;
+  M('LEVEL '+level+' — '+WEAPONS[weapon]+(level%5===0?' | KING INCOMING!':''));
+  setUI();
+  if(window.jkSnd&&window.jkSnd.coin)window.jkSnd.coin();
+}
+
+function endGame(win){
+  run=0;$('fire').disabled=true;
+  $('go').textContent='PLAY AGAIN';
+  if(win){M('🏆 VICTORY! Levels cleared');if(window.jkSnd&&window.jkSnd.win)window.jkSnd.win()}
+  else{M('💀 YOU DIED — Level '+level+' | Kills '+kills);if(window.jkSnd&&window.jkSnd.lose)window.jkSnd.lose()}
+}
+
+function drawBg(){
+  x.fillStyle='#0f172a';x.fillRect(0,0,W,H);
+  x.fillStyle='#1e293b';x.fillRect(0,G,W,H-G);
+  x.fillStyle='#334155';
+  for(let i=0;i<8;i++){const bx=(i*48+frame*0.3)%(W+40)-20;x.fillRect(bx,G-30,18,30)}
+  x.fillStyle='#475569';x.fillRect(0,G,W,3);
+}
+
+function drawPlayer(){
+  x.save();
+  if(shake){x.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake);shake*=0.85}
+  x.font=(weapon===2?'26px':'22px')+' serif';
+  x.textAlign='left';x.textBaseline='bottom';
+  x.fillText(weapon===2?'🚜':'💂',player.x-4,player.y+18);
+  x.restore();
+}
+
+function drawZ(z){
+  x.save();
+  const bob=Math.sin(frame*0.12+z.wob)*2;
+  x.font=z.king?'28px serif':'20px serif';
+  x.textAlign='center';x.textBaseline='bottom';
+  x.fillText(z.king?'🧟‍♂️':'🧟',z.x,z.y+16+bob);
+  if(z.king||z.hp<z.maxHp){
+    const bw=z.king?28:16;
+    x.fillStyle='#333';x.fillRect(z.x-bw/2,z.y-6,bw,4);
+    x.fillStyle=z.king?'#a855f7':'#22c55e';
+    x.fillRect(z.x-bw/2,z.y-6,bw*(z.hp/z.maxHp),4);
+  }
+  x.restore();
+}
+
+function draw(){
+  drawBg();
+  bullets.forEach(b=>{x.fillStyle=b.color;x.beginPath();x.arc(b.x,b.y,weapon===2?4:2.5,0,6.28);x.fill()});
+  zombies.forEach(drawZ);
+  particles.forEach(p=>{x.globalAlpha=Math.max(0,p.life/16);x.fillStyle=p.c;x.fillRect(p.x,p.y,3,3);x.globalAlpha=1});
+  drawPlayer();
+  x.fillStyle='#94a3b8';x.font='10px system-ui';x.textAlign='left';
+  x.fillText('Lv'+level+'/20  Kills:'+kills,6,14);
+  if(kingAlive){x.fillStyle='#c084fc';x.fillText('👑 KING',W-52,14)}
+}
+
+function loop(){
+  if(!run)return;
+  frame++;
+  const cfg=WCFG[weapon];
+  const needKills=8+level*2+(level>10?level:0);
+  const maxZ=3+Math.floor(level/2)+ (level>15?3:0);
+
+  if(frame%cfg.rate===0 && zombies.length){/* auto hint */}
+  spawnT++;
+  const spawnRate=Math.max(18,55-level*2);
+  if(spawnT>spawnRate && zombies.length<maxZ){
+    spawnT=0;
+    const wantKing=level%5===0 && !kingAlive && kills>=needKills*0.45;
+    spawnZ(wantKing || (level>=15 && Math.random()<0.08 && !kingAlive));
+  }
+
+  for(let i=bullets.length-1;i>=0;i--){
+    const b=bullets[i];b.x+=b.vx;b.y+=b.vy;b.life--;
+    if(b.life<=0||b.x>W+10){bullets.splice(i,1);continue}
+    for(let j=zombies.length-1;j>=0;j--){
+      const z=zombies[j];
+      if(Math.abs(b.x-z.x)<z.size && Math.abs(b.y-(z.y+8))<z.size){
+        z.hp-=b.dmg;bullets.splice(i,1);
+        hitFx(z.x,z.y,z.king?'#c084fc':'#4ade80');
+        if(window.jkSnd&&window.jkSnd.hit)window.jkSnd.hit();
+        if(z.hp<=0){
+          kills++;score+=z.king?50:10;
+          if(z.king){kingAlive=0;M('👑 KING DOWN! Level up soon...');beep(150,0.3,'sawtooth',0.1)}
+          zombies.splice(j,1);
+        }
+        break;
+      }
+    }
+  }
+
+  for(let i=zombies.length-1;i>=0;i--){
+    const z=zombies[i];
+    z.x-=z.speed;
+    if(z.x<player.x+20){
+      hp-=z.king?8:2.2;shake=6;
+      hitFx(player.x+10,player.y,'#ef4444');
+      zombies.splice(i,1);
+      if(window.jkSnd&&window.jkSnd.hit)window.jkSnd.hit();
+      if(hp<=0){hp=0;setUI();endGame(false);draw();return}
+    }
+  }
+
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.life--;
+    if(p.life<=0)particles.splice(i,1);
+  }
+
+  if(kills>=needKills && !kingAlive && zombies.length===0){
+    nextLevel();
+  } else if(kills>=needKills && kingAlive===0 && level%5!==0){
+    nextLevel();
+  }
+
+  setUI();draw();
+  requestAnimationFrame(loop);
+}
+
+function start(){
+  level=1;kills=0;hp=100;maxHp=100;weapon=0;score=0;
+  player={x:40,y:G-18};zombies=[];bullets=[];particles=[];frame=0;spawnT=0;kingAlive=0;shake=0;
+  run=1;$('fire').disabled=false;$('go').textContent='RESTART';
+  M('Level 1 — Clear zombies! Tap FIRE or screen');
+  setUI();draw();loop();
+  if(window.jkSnd&&window.jkSnd.coin)window.jkSnd.coin();
+}
+
+$('go').onclick=start;
+$('fire').onclick=()=>{if(run)fire()};
+c.onpointerdown=e=>{if(run){fire();e.preventDefault()}};
+draw();M('Survive 20 levels. King takes many hits!');
+</script></body></html>
